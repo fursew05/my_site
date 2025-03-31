@@ -1,95 +1,55 @@
-from datetime import datetime 
-import pandas as pd 
-import numpy as np
+from datetime import datetime
+import pandas as pd
+import numpy as np 
+
 
 def create_band(
         _df, 
-        _col = 'Adj Close', 
-        _start = "2010-01-01", 
-        _end = datetime.now(), 
-        _cnt = 20):
-        #복사본 생성
-        df = _df.copy()
-        # 인덱스가 Date 인가?
-        if 'Date' in df.columns:
-                df.set_index('Date', inplace=True)
+        _col, 
+        _start, 
+        _end, 
+        _cnt = 20
+):
+    # 복사본을 생성 
+    result = _df.copy()
+    # 이동평균선, 상단 밴드, 하단 밴드 생성 
+    result['center'] = result[_col].rolling(_cnt).mean()
+    result['up'] = \
+        result['center'] + (2 * result[_col].rolling(_cnt).std())
+    result['down'] = \
+        result['center'] - (2 * result[_col].rolling(_cnt).std())
 
-        # index를 시계열 데이터로 변경
-        df.index = pd.to_datetime(df.index, format='%Y-%m-%d')
-        # 시작시간과 종료 시간은 시계열로 변경 
-        try:
-                if type(_start) == 'str':
-                    start = datetime.strptime(_start, '%Y-%m-%d')
-                else:
-                    start = _start
-                if type(_end) == "str":
-                        end = datetime.strptime(_end, '%Y-%m-%d')
-                else:
-                        end = _end
-        except:
-                return "인자값의 타입이 잘못되었습니다.(예 : YYYY-mm-dd)"
-        # 결측치와 무한대 값을 제외
-        flag = df.isin([np.nan, np.inf, -np.inf]).any(axis=1)
-        df = df.loc[~flag,]
-        # 기준이 되는 컬럼을 제외하고 모두 삭제 
-        result = df[[_col]]
-        # 이동 평균선, 상단밴드, 하단밴드 생성
-        result['center'] = result[_col].rolling(_cnt).mean()
-        result['ub'] = result['center'] + (2 * result[_col].rolling(_cnt).std())
-        result['lb'] = result['center'] - (2 * result[_col].rolling(_cnt).std())
-        # 시작 시간과 종료시간으로 필터링
-        result = result.loc[start:end,]
-        return result
-        
+    # 시작 시간과 종료 시간을 기준으로 데이터를 필터링 
+    result = result.loc[_start : _end]
+    return result
+
 def create_trade(_df):
-    # 기준이 되는 컬럼의 이름 변수에 저장
-    col = _df.columns[0]
+    result = _df.copy()
+    # 첫번째 컬럼의 이름을 변수에 저장 
+    col = result.columns[0]
 
-    df = _df.copy()
+    # 보유 내역 컬럼을 생성 '' 대입
+    result['trade'] = ''
 
-    # 거래 내역이라는 컬럼을 생성
-    df['trade'] = ""
-
-    # 거래 내역 추가 
-    for i in df.index:
-        # 상단밴드보다 기준이 되는 컬럼의 값이 높거나 같은 경우 
-        if df.loc[i, col] >= df.loc[i, 'ub']:
-            df.loc[i, 'trade'] = ""
-        # 하단밴드보다 col의 값이 작거나 같은 경우
-        elif df.loc[i, col] <= df.loc[i, 'lb']:
-            df.loc[i, 'trade'] = "buy"
-        # 밴드 사이에 col의 값이 존재한다면
+    # 내역 추가 
+    for idx in result.index:
+        # 상단 밴드보다 기준이 되는 컬럼의 값이 크거나 같은 경우
+        if result.loc[idx, col] >= result.loc[idx, 'up']:
+            # 매수중인 경우 매도 // 보유중 아니면 유지
+            # trade = ''
+            result.loc[idx, 'trade'] = ''
+        # 하단 밴드보다 기준이 되는 컬럼의 값이 작거나 같은 경우 
+        elif result.loc[idx, 'down'] >= result.loc[idx, col]:
+            # 보유중이 아니면 매수 // 보유중이면 유지 
+            # trade = 'buy'
+            result.loc[idx, 'trade'] = 'buy'
+        # 밴드 중간에 기준이 되는 컬럼의 값이 존재한다면
         else:
-            if df.shift().loc[i, 'trade'] == "":
-                df.loc[i, 'trade'] = df.shift().loc[i, 'trade']
-    return df
+            # 보유중이라면 보유 유지
+            if result.shift().loc[idx, 'trade'] == 'buy':
+                result.loc[idx, 'trade'] = 'buy'
+            # 보유중이 아니라면 유지
+            else:
+                result.loc[idx, 'trade'] = ''
+    return result
 
-# 세번째 함수 생성 
-def create_rtn(_df):
-    # 기준이 되는 컬럼의 이름 
-    col = _df.columns[0]
-    df = _df.copy()
-    # 수익율 파생변수 생성 데이터는 1로 대입
-    df['rtn'] = 1
-
-    # 수익율 대입 
-    for i in df.index:
-        # 구입
-        if (df.shift().loc[i, 'trade'] == "") & \
-            (df.loc[i, 'trade'] == "buy"):
-            buy = df.loc[i, col]
-            # print(f'매수일 : {i}, 매수가 : {buy}')
-        # 판매
-        elif (df.shift().loc[i, 'trade'] == "buy") & \
-            (df.loc[i, 'trade'] == ""):
-            sell = df.loc[i, col]
-            # 수익율 발생
-            rtn = sell / buy
-            # 수익율 대입 
-            df.loc[i, 'rtn'] = rtn
-            # 출력 
-            # print(f'매도일 : {i}, 매도가 : {sell}, 수익율 : {rtn}')
-    df['acc_rtn'] = df['rtn'].cumprod()
-    # 최종 누적수익율을 출력
-    acc_rtn = df['acc_rtn'][-1]
-    return df, acc_rtn

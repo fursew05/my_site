@@ -1,100 +1,76 @@
-import pandas as pd 
+import pandas as pd
 import numpy as np
 from datetime import datetime
 
-def create_YM(
+def create_ym(
         _df, 
         _col = 'Adj Close'
 ):
-    df = _df.copy()
-    # Date가 컬럼에 포함되어있는가?
-    if 'Date' in df.columns:
-        # 포함되어있다면 Date를 인덱스로 변환 
-        df.set_index('Date', inplace=True)
-    # 인덱스를 시계열데이터로 변경
-    df.index = pd.to_datetime(df.index, format='%Y-%m-%d')
-    # 결측치, 무한대 데이터를 제거 기준이되는 컬럼만 두고 나머지 모두 제거 
-    flag = df.isin([np.nan, np.inf, -np.inf]).any(axis=1)
-    df = df.loc[~flag, [_col]]
-    # 파생변수 STD-YM 생성
-    df['STD-YM'] = df.index.strftime('%Y-%m')
-
-    return df
+    # 복사본 생성 
+    result = _df.copy()
+    flag = result.isin( [np.nan, np.inf, -np.inf] ).any(axis=1)
+    result = result.loc[~flag, [_col] ]
+    # 파생변수를 생성 
+    result['STD-YM'] = result.index.strftime('%Y-%m')
+    return result
 
 def create_month(
         _df, 
-        _start = "2010-01-01", 
-        _end = datetime.now(), 
+        _start, 
+        _end, 
         _momentum = 12, 
         _select = 1
 ):
+    # _select가 1과 같다면
     if _select == 1:
-        # 월말의 데이터들을 새로운 데이터프레임으로 생성 
-        # 현재 행의 년-월과 다음 행의 년-월이 다른 경우 
+        # 월말 데이터의 조건식을 생성
         flag = _df['STD-YM'] != _df.shift(-1)['STD-YM']
-        # df = _df.loc[flag,]
+        # result = _df.loc[flag]
     elif _select == 0:
-        flag = _df['STD-YM'] != _df.shift()['STD-YM']
-        # df = _df.loc[flag,]
-    else :
-        return "_select 인자는 0과 1이 가능하다"
-    col = _df.columns[0]
-    df = _df.loc[flag,]
-    df['BF1'] = df.shift()[col].fillna(0)
-    df['BF2'] = df.shift(_momentum)[col].fillna(0)
-    # 시작시간과 종료 시간은 시계열로 변경 
+        # 월초 데이터의 조건식 생성
+        flag = _df['STD-YM'] != _df.shift(1)['STD-YM']
+        # result = _df.loc[flag]
+    else:
+        return "_select의 값은 0 아니면 1 입니다."
+    result = _df.loc[flag]
+    # 기준이 되는 컬럼의 이름을 변수에 저장 
+    col = result.columns[0]
+    # BF1컬럼을 생성
+    # 전월의 데이터를 대입
+    result['BF1'] = result.shift(1)[col]
+    # _momentum 값의 과거의 개월수 데이터 대입 
+    result['BF2'] = result.shift(_momentum)[col]
     try:
-            if type(_start) == 'str':
-                start = datetime.strptime(_start, '%Y-%m-%d')
-            else:
-                start = _start
-            if type(_end) == "str":
-                    end = datetime.strptime(_end, '%Y-%m-%d')
-            else:
-                    end = _end
-    except:
-            return "인자값의 타입이 잘못되었습니다.(예 : YYYY-mm-dd)"
-    df = df.loc[start:end,]
-    return df
+        result.index = result.index.tz_localize(None)
+    except Exception as e:
+        print(e)
+    # 시작 시간과 종료시간을 기준으로 데이터 필터링 
+    result = result.loc[_start : _end]
+    return result
+    
+def create_trade(
+        _df1, 
+        _df2, 
+        _score = 1
+):
+    # 복사본 생성
+    result = _df1.copy()
+    # trade 컬럼을 추가 
+    result['trade'] = ''
 
-def create_rtn(_df1, _df2, _score = 1):
-    # _df1에 파생변수 2개 생성 
-    _df1['trade'] = ""
-    _df1['rtn'] = 1
-
-    # _df2 데이터를 이용하여 momentum_index를 계산하고 거래 내역 추가 
-    for i in _df2.index:
-        signal = ""
-
-        # 절대 모멘텀 계산
-        momentum_index = _df2.loc[i, 'BF1'] / _df2.loc[i, 'BF2'] - _score
-
-        # 모멘텀 인덱스가 무한대가 아니고 0보다 큰 경우 
+    # 반복문 생성 -> _df2를 기준으로 반복
+    for idx in _df2.index:
+        signal = ''
+        # 모멘텀 인덱스를 계산
+        momentum_index = _df2.loc[idx, 'BF1'] / \
+              _df2.loc[idx,'BF2'] - _score
+        # 모멘텀 인덱스를 이용하여 구매 신호 생성
         flag = (momentum_index > 0) & (momentum_index != np.inf)
-
-        if flag:
+        if flag :
             signal = 'buy'
-        
-        _df1.loc[i:, 'trade'] = signal
-        # print(f"날짜 : {i}, 모멘텀 인덱스 : {momentum_index}, flag : {flag}, signal : {signal}")
-    # 수익율 계산
-    col = _df1.columns[0]
-
-    for i in _df1.index:
-        # 구매한 날의 조건식 (전날의 trade가 "" 오늘의 trade가 "buy")
-        if (_df1.shift().loc[i, 'trade'] == "") & (_df1.loc[i, 'trade'] == "buy"):
-            buy = _df1.loc[i, col]
-            print(f"매수일 : {i}, 매수가 : {buy}")
-        # 판매한 날의 조건식 (전날의 trade가 "buy" 오늘의 trade가 "")
-        elif (_df1.shift().loc[i, 'trade'] == "buy") & (_df1.loc[i, 'trade'] == ""):
-            sell = _df1.loc[i, col]
-            rtn = sell / buy
-            _df1.loc[i, 'rtn'] = rtn
-            # print(f"매도일 : {i}, 매도가 : {sell}, 수익율 : {rtn}")
-    # 누적수익율 계산
-    _df1['acc_rtn'] = _df1['rtn'].cumprod()
-
-    # 총 누적수익율 변수에 대입 
-    acc_rtn = _df1.iloc[-1, ]['acc_rtn']
-
-    return _df1, acc_rtn
+        # 출력 
+        print(f"날짜 : {idx}, 모멘텀 인덱스 : {momentum_index}, signal : {signal}")
+        # 구매 신호를 result에 대입 
+        result.loc[idx:, 'trade'] = signal
+    
+    return result

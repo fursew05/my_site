@@ -382,20 +382,11 @@
   const ctx2 = document.getElementById('myChart2')
   // eslint-disable-next-line no-unused-vars
   const myChart2 = new Chart(ctx2, {
-    type: 'line',
+    type: 'bar',
     data: {
       // x축 데이터
       labels: {{x_data|tojson}},
-      datasets: [{
-        // data -> y축 데이터
-        data: {{y_data|tojson}},
-        lineTension: 0,
-        backgroundColor: 'transparent',
-        borderColor: '#007bff',
-        borderWidth: 4,
-        pointBackgroundColor: '#007bff',
-        yAxisID : 'y'
-      },
+      datasets: [
       {
         // data -> y축 데이터
         data: {{y1_data|tojson}},
@@ -416,17 +407,8 @@
         tooltip: {
           boxPadding: 3
         }
-      },
-      scales :{
-        y : {
-          position : 'left'
-        },
-        y1 :{
-          position : 'right',
-          min : 0,
-          max : 1e8
-        }
       }
+      
     }
   })
     </script>

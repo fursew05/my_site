@@ -8,7 +8,7 @@ app = Flask(__name__)
 #유저가 어떤 종목, 투자기간, 투자전략 방식을 입력할 수 있는
 #페이지를 보여주는 api 생성
 @app.route('/invest')
-def invest():
+def first():
     return render_template('invest.html')
 
 #대쉬보드 페이지를 보여주는 api 생성
@@ -30,7 +30,7 @@ def dashboard():
     # 투자방식
     input_type = request.args['type']
     # 1. 데이터 로드
-    df = invest.load_data(input_code,_start=input_time)
+    df = invest.load_data(input_code,start=input_time)
     # 2. 클래스 생성성
     invest_class = invest.Invest(df,_start=input_time,_col='Close')
     # 3. input_type 기준으로 Close 함수를 호출
@@ -43,8 +43,18 @@ def dashboard():
     result.reset_index(inplace=True)
     # 4. 특정 컬럼만 추출
     result = result[['Date','Close','trade','rtn','acc_rtn']]
+    result['ym'] = result['Date'].dt.strftime('%Y-%m')
+    # 테이블 정제
+    result = pd.concat(
+        [
+            result.groupby('ym')[['Close','trade','acc_rtn']].max(),
+            result.groupby('ym')[['rtn']].mean()
+        ], axis=1
+    )
+    result.reset_index(inplace=True)
+
     # 5. 컬럼의 이름 변경
-    result.columns = ['시간','종가','보유내역','일별 수익률','누적 수익률']
+    result.columns = ['시간','종가','보유내역','누적 수익률','일별 수익률']
     # 6. 컬럼들의 이름을 리스트로 생성
     cols_list = list(result.columns)
     # 테이블의 데이터
